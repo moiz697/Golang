@@ -1,0 +1,72 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net/http"
+
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+)
+
+// User represents a user in the database
+type User struct {
+	ID    int
+	Name  string
+	Age   int
+	Email string
+}
+
+var users []User
+func createuser(client *mongo.Client, w http.ResponseWriter, r *http.Request) {
+	var user User
+	fmt.Println("Enter user name: ")
+	fmt.Scan(&user.Name)
+	fmt.Println("Enter Age: ")
+	fmt.Scan(&user.Age)
+	fmt.Println("Enter Email: ")
+	fmt.Scan(&user.Email)
+	user.ID = len(users) + 1
+	users = append(users, user)
+
+	collection := client.Database("CRUD").Collection("user")
+	_, err := collection.InsertOne(context.Background(), user)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("created a user with ID: %d\n", user.ID)
+
+	// Redirect to index2.html
+	http.Redirect(w, r, "/index2.html", http.StatusSeeOther)
+}
+
+
+
+func main() {
+
+	clientOptions := options.Client().ApplyURI("mongodb+srv://moiz697:jijjkklkikk129@cluster0.xdxgkmq.mongodb.net/cru")
+	client, err := mongo.Connect(context.Background(), clientOptions)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer client.Disconnect(context.Background())
+
+	err = client.Ping(context.Background(), nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("Connected to MongoDB!")
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			http.ServeFile(w, r, "index.html")
+		} else if r.Method == "POST" {
+			createuser(client, w, r)
+		}
+	})
+
+	fmt.Println("Listening on port 8080...")
+	http.ListenAndServe(":8080", nil)
+}
