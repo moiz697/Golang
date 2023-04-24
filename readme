@@ -1,0 +1,3 @@
+to connect to database 
+mongosh "mongodb+srv://cluster0.xdxgkmq.mongodb.net/CRUD" --apiVersion 1 --username moiz697
+mongodb+srv://moiz697:jijjkklkikk129@cluster0.xdxgkmq.mongodb.net/test
