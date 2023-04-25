@@ -5,43 +5,105 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // User represents a user in the database
 type User struct {
-	ID    int
+	ID    primitive.ObjectID `bson:"_id,omitempty"`
 	Name  string
 	Age   int
 	Email string
 }
 
 var users []User
-func createuser(client *mongo.Client, w http.ResponseWriter, r *http.Request) {
-	var user User
-	fmt.Println("Enter user name: ")
-	fmt.Scan(&user.Name)
-	fmt.Println("Enter Age: ")
-	fmt.Scan(&user.Age)
-	fmt.Println("Enter Email: ")
-	fmt.Scan(&user.Email)
-	user.ID = len(users) + 1
-	users = append(users, user)
 
+func createUser(client *mongo.Client, w http.ResponseWriter, r *http.Request) {
+	var user User
+
+	// Parse form data
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Get form data
+	user.Name = r.FormValue("name")
+	ageStr := r.FormValue("age")
+	user.Email = r.FormValue("email")
+
+	// Validate input
+	if user.Name == "" || user.Email == "" || ageStr == "" {
+		http.Error(w, "All fields are required", http.StatusBadRequest)
+		return
+	}
+	age, err := strconv.Atoi(ageStr)
+	if err != nil {
+		http.Error(w, "Invalid age", http.StatusBadRequest)
+		return
+	}
+	user.Age = age
+
+	// Insert user into database
 	collection := client.Database("CRUD").Collection("user")
-	_, err := collection.InsertOne(context.Background(), user)
+	_, err = collection.InsertOne(context.Background(), user)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("Created a user with ID: %v\n", user.ID)
+	res, err := collection.InsertOne(context.Background(), user)
+	if err != nil {
+		log.Printf("Error inserting user: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	fmt.Printf("Inserted user with ID: %v\n", res.InsertedID)
+
+	// Redirect to index.html
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+
+}
+
+func readUsers(client *mongo.Client, w http.ResponseWriter, r *http.Request) {
+	collection := client.Database("CRUD").Collection("user")
+	cur, err := collection.Find(context.Background(), bson.D{})
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("created a user with ID: %d\n", user.ID)
 
-	// Redirect to index2.html
-	http.Redirect(w, r, "/index2.html", http.StatusSeeOther)
+	defer cur.Close(context.Background())
+
+	var users []User
+	for cur.Next(context.Background()) {
+		var user User
+		err := cur.Decode(&user)
+		if err != nil {
+			log.Fatal(err)
+		}
+		users = append(users, user)
+	}
+
+	if err := cur.Err(); err != nil {
+		log.Fatal(err)
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	fmt.Fprintln(w, "<html><head><title>Read Users</title></head><body>")
+	fmt.Fprintln(w, "<h1>Read Users</h1>")
+	fmt.Fprintln(w, "<table><tr><th>ID</th><th>Name</th><th>Age</th><th>Email</th></tr>")
+	for _, user := range users {
+		fmt.Fprintf(w, "<tr><td>%s</td><td>%s</td><td>%d</td><td>%s</td></tr>", user.ID.Hex(), user.Name, user.Age, user.Email)
+	}
+	fmt.Fprintln(w, "</table></body></html>")
 }
-
-
 
 func main() {
 
@@ -63,7 +125,8 @@ func main() {
 		if r.Method == "GET" {
 			http.ServeFile(w, r, "index.html")
 		} else if r.Method == "POST" {
-			createuser(client, w, r)
+			createUser(client, w, r)
+			readUsers(client, w, r)
 		}
 	})
 
